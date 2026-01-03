@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cronograma Definitivo | Cuidados Intensivos Pediátricos</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;600&family=Syncopate:wght@400;700&display=swap" rel="stylesheet">
+    
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <style>
+        :root {
+            --bg-color: #050508;
+            --text-color: #e0e0e0;
+            --accent: #00f2ea; /* Medical Cyan */
+            --accent-dim: rgba(0, 242, 234, 0.1);
+            --exam-color: #ff2a6d; /* Alert Red for Exam */
+            --card-bg: rgba(20, 20, 25, 0.6);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --font-display: 'Syncopate', sans-serif;
+            --font-body: 'Space Grotesk', sans-serif;
+            --easing: cubic-bezier(0.19, 1, 0.22, 1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            cursor: none;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: var(--font-body);
+            overflow-x: hidden;
+            line-height: 1.6;
+        }
+
+        /* --- Custom Cursor --- */
+        .cursor-dot, .cursor-outline {
+            position: fixed;
+            top: 0;
+            left: 0;
+            transform: translate(-50%, -50%);
+            border-radius: 50%;
+            z-index: 9999;
+            pointer-events: none;
+        }
+        .cursor-dot { width: 6px; height: 6px; background-color: var(--accent); }
+        .cursor-outline {
+            width: 30px;
+            height: 30px;
+            border: 1px solid var(--accent);
+            transition: width 0.2s, height 0.2s, background-color 0.2s;
+        }
+        body:hover .cursor-outline.hovered {
+            width: 50px; height: 50px;
+            background-color: rgba(0, 242, 234, 0.1);
+            border-color: transparent;
+            backdrop-filter: blur(2px);
+        }
+
+        /* --- WebGL Background --- */
+        #canvas-container {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: -1; opacity: 0.4;
+        }
+
+        /* --- Layout --- */
+        .container { width: 90%; max-width: 1200px; margin: 0 auto; position: relative; z-index: 2; }
+        
+        /* --- Header --- */
+        header {
+            padding: 6rem 0 4rem 0;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 4rem;
+        }
+        
+        .overline {
+            color: var(--accent);
+            font-family: var(--font-display);
+            font-size: 0.8rem;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            margin-bottom: 1rem;
+            display: block;
+        }
+
+        h1 {
+            font-family: var(--font-display);
+            font-size: clamp(2.5rem, 6vw, 4.5rem);
+            line-height: 1;
+            text-transform: uppercase;
+            margin-bottom: 1.5rem;
+        }
+
+        .purpose-box {
+            background: var(--accent-dim);
+            border-left: 3px solid var(--accent);
+            padding: 1.5rem;
+            max-width: 800px;
+            backdrop-filter: blur(10px);
+        }
+
+        /* --- Timeline --- */
+        .timeline {
+            position: relative;
+            padding-bottom: 6rem;
+        }
+
+        /* The vertical line */
+        .timeline::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 50%;
+            width: 2px;
+            height: 100%;
+            background: linear-gradient(to bottom, var(--accent), transparent, var(--exam-color));
+            transform: translateX(-50%);
+        }
+
+        .timeline-item {
+            display: flex;
+            justify-content: flex-end;
+            padding-bottom: 4rem;
+            position: relative;
+            width: 50%;
+            opacity: 0; /* Animated in JS */
+            transform: translateY(50px);
+            transition: all 0.6s var(--easing);
+        }
+
+        .timeline-item.visible { opacity: 1; transform: translateY(0); }
+
+        .timeline-item:nth-child(odd) { align-self: flex-start; text-align: right; padding-right: 3rem; left: 0; }
+        .timeline-item:nth-child(even) { align-self: flex-end; text-align: left; padding-left: 3rem; left: 50%; }
+
+        /* Dot on the line */
+        .timeline-dot {
+            position: absolute;
+            top: 0;
+            width: 16px;
+            height: 16px;
+            background: var(--bg-color);
+            border: 2px solid var(--accent);
+            border-radius: 50%;
+            z-index: 5;
+            transition: background 0.3s;
+        }
+        
+        .timeline-item:nth-child(odd) .timeline-dot { right: -9px; }
+        .timeline-item:nth-child(even) .timeline-dot { left: -9px; }
+
+        .timeline-item:hover .timeline-dot { background: var(--accent); box-shadow: 0 0 15px var(--accent); }
+
+        /* Exam specific dot */
+        .timeline-item.exam-day .timeline-dot { border-color: var(--exam-color); }
+        .timeline-item.exam-day:hover .timeline-dot { background: var(--exam-color); box-shadow: 0 0 15px var(--exam-color); }
+
+        /* Content Card */
+        .content-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            padding: 2rem;
+            border-radius: 4px;
+            backdrop-filter: blur(10px);
+            transition: transform 0.3s var(--easing), border-color 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .content-card:hover {
+            border-color: var(--accent);
+            transform: scale(1.02);
+        }
+
+        .date-tag {
+            font-family: var(--font-display);
+            font-size: 0.9rem;
+            color: var(--accent);
+            margin-bottom: 0.5rem;
+            display: block;
+        }
+
+        .exam-day .date-tag { color: var(--exam-color); }
+        .exam-day .content-card { border-color: rgba(255, 42, 109, 0.3); }
+
+        .topic-title {
+            font-size: 1.4rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .sub-topic {
+            color: #888;
+            font-size: 0.95rem;
+            margin-bottom: 0.2rem;
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 0.5rem;
+        }
+        
+        /* Flex alignment fix for left/right layout */
+        .timeline-item:nth-child(odd) .sub-topic { justify-content: flex-end; }
+
+        .sub-topic::before {
+            content: '>';
+            color: var(--accent);
+            font-size: 0.8rem;
+        }
+
+        /* Simulation Badge */
+        .badge {
+            display: inline-block;
+            background: rgba(0, 242, 234, 0.15);
+            color: var(--accent);
+            font-size: 0.7rem;
+            padding: 2px 8px;
+            border-radius: 2px;
+            margin-top: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Exam Alert */
+        .exam-alert {
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid rgba(255, 42, 109, 0.3);
+            color: var(--exam-color);
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        /* --- Responsive --- */
+        @media (max-width: 768px) {
+            .timeline::before { left: 20px; }
+            .timeline-item { width: 100%; padding-left: 50px; padding-right: 0; text-align: left; }
+            .timeline-item:nth-child(even) { left: 0; }
+            .timeline-item:nth-child(odd) { text-align: left; }
+            .timeline-item:nth-child(odd) .sub-topic { justify-content: flex-start; }
+            .timeline-item:nth-child(odd) .timeline-dot, 
+            .timeline-item:nth-child(even) .timeline-dot { left: 11px; right: auto; }
+            h1 { font-size: 2.5rem; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Custom Cursor -->
+    <div class="cursor-dot" id="cursor-dot"></div>
+    <div class="cursor-outline" id="cursor-outline"></div>
+
+    <!-- WebGL Background -->
+    <div id="canvas-container"></div>
+
+    <main class="container">
+        <header>
+            <span class="overline">Bloque Curricular</span>
+            <h1>Cuidados Intensivos<br>Pediátricos</h1>
+            <div class="purpose-box">
+                <p><strong>Propósito:</strong> Brindar soporte en cuidados críticos fundamentales a la enfermedad aguda grave del paciente pediátrico grave en casos reales o simulados.</p>
+            </div>
+        </header>
+
+        <div class="timeline">
+            
+            <!-- SEMANA 1 -->
+            <div class="timeline-item">
+                <div class="timeline-dot"></div>
+                <div class="content-card magnetic-area">
+                    <span class="date-tag">07 ENE (MIÉRCOLES)</span>
+                    <h3 class="topic-title">Evaluación Inicial</h3>
+                    <div class="sub-topic">Evaluación del paciente pediátrico grave</div>
+                    <div class="sub-topic">Enfoque sistemático para manejo</div>
+                </div>
+            </div>
+
+            <div class="timeline-item">
+                <div class="timeline-dot"></div>
+                <div class="content-card magnetic-area">
+                    <span class="date-tag">09 ENE (VIERNES)</span>
+                    <h3 class="topic-title">Transporte y Farmacología</h3>
+                    <div class="sub-topic">Transporte de un niño grave</div>
+                    <div class="sub-topic">Sedación, analgesia y bloqueo neuromuscular</div>
+                </div>
+            </div>
+
+            <!-- SEMANA 2 -->
+            <div class="timeline-item">
+                <div class="timeline-dot"></div>
+                <div class="content-card magnetic-area">
+                    <span class="date-tag">13 ENE (LUNES)</span>
+                    <h3 class="topic-title">Paro Cardiaco</h3>
+                    <div class="sub-topic">Identificación y tratamiento</div>
+                    <div class="sub-topic">Manejo postparo cardiaco</div>
+                    <span class="badge">Simulación</span>
+                </div>
+            </div>
+
+            <div class="timeline-item">
+                <div class="timeline-dot"></div>
+                <div class="content-card magnetic-area">
+                    <span class="date-tag">15 ENE (MIÉRCOLES)</span>
+                    <h3 class="topic-title">Insuficiencia Respiratoria</h3>
+                    <div class="sub-topic">Identificación y tratamiento</div>
+                    <div class="sub-topic">Manejo de vía aérea en un niño</div>
+                </div>
+            </div>
+
+            <div class="timeline-item">
+                <div class="timeline-dot"></div>
+                <div class="content-card magnetic-area">
+                    <span class="date-tag">17 ENE (VIERNES)</span>
+                    <h3 class="topic-title">Soporte Ventilatorio</h3>
+                    <div class="sub-topic">Generalidades de Ventilación Mecánica en el paciente pediátrico</div>
+                </div>
+            </div>
+
+            <!-- SEMANA 3 -->
+            <div class="timeline-item">
+                <div class="timeline-dot"></div>
+                <div class="content-card magnetic-area">
+                    <span class="date-tag">20 ENE (LUNES)</span>
+                    <h3 class="topic-title">Homeostasis I</h3>
+                    <div class="sub-topic">Trastornos de líquidos y electrolitos</div>
+                </div>
+            </div>
+
+            <div class="timeline-item">
+                <div class="timeline-dot"></div>
+                <div class="content-card magnetic-area">
+                    <span class="date-tag">22 ENE (MIÉRCOLES)</span>
+                    <h3 class="topic-title">Homeostasis II</h3>
+                    <div class="sub-topic">Trastornos metabólicos en un niño</div>
+                </div>
+            </div>
+
+            <div class="timeline-item">
+                <div class="timeline-dot"></div>
+                <div class="content-card magnetic-area">
+                    <span class="date-tag">24 ENE (VIERNES)</span>
+                    <h3 class="topic-title">Choque y Hemodinamia</h3>
+                    <div class="sub-topic">Identificación y tratamiento del choque</div>
+                    <span class="badge">Crítico</span>
+                </div>
+            </div>
+
+            <!-- SEMANA 4 -->
+            <div class="timeline-item">
+                <div class="timeline-dot"></div>
+                <div class="content-card magnetic-area">
+                    <span class="date-tag">27 ENE (LUNES)</span>
+                    <h3 class="topic-title">Quemaduras</h3>
+                    <div class="sub-topic">Clasificación y valoración inicial</div>
+                    <div class="sub-topic">Manejo de fluidos y resucitación</div>
+                </div>
+            </div>
+
+            <div class="timeline-item">
+                <div class="timeline-dot"></div>
+                <div class="content-card magnetic-area">
+                    <span class="date-tag">29 ENE (MIÉRCOLES)</span>
+                    <h3 class="topic-title">Emergencias Neurológicas</h3>
+                    <div class="sub-topic">Evaluación y manejo neurológico agudo</div>
+                </div>
+            </div>
+
+            <div class="timeline-item">
+                <div class="timeline-dot"></div>
+                <div class="content-card magnetic-area">
+                    <span class="date-tag">31 ENE (VIERNES)</span>
+                    <h3 class="topic-title">Toxicología</h3>
+                    <div class="sub-topic">Intoxicación y envenenamiento en un niño</div>
+                </div>
+            </div>
+
+            <!-- SEMANA 5 (EXAMEN) -->
+            <div class="timeline-item">
+                <div class="timeline-dot"></div>
+                <div class="content-card magnetic-area">
+                    <span class="date-tag">03 FEB (LUNES)</span>
+                    <h3 class="topic-title">Arritmias Cardíacas</h3>
+                    <div class="sub-topic">Identificación y tratamiento de arritmias</div>
+                    <div class="sub-topic">Farmacología antiarrítmica</div>
+                </div>
+            </div>
+
+            <div class="timeline-item">
+                <div class="timeline-dot"></div>
+                <div class="content-card magnetic-area">
+                    <h3 class="topic-title">Simulación de Casos Críticos</h3>
+                    <div class="sub-topic">Integración de múltiples emergencias</div>
+                    <div class="sub-topic">Práctica de trabajo en equipo</div>
+                    <span class="badge">Simulación Final</span>
+                </div>
+            </div>
+
+            <div class="timeline-item exam-day">
+                <div class="timeline-dot"></div>
+                <div class="content-card magnetic-area">
+                    <span class="date-tag">06 FEB (JUEVES)</span>
+                    <h3 class="topic-title">EXAMEN FINAL</h3>
+                    <div class="sub-topic">Evaluación teórica del bloque</div>
+                    <div class="exam-alert">No hay clase - Evaluación</div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <script>
+        // --- 1. CURSOR ---
+        const cursorDot = document.getElementById('cursor-dot');
+        const cursorOutline = document.getElementById('cursor-outline');
+        
+        window.addEventListener('mousemove', (e) => {
+            const posX = e.clientX;
+            const posY = e.clientY;
+
+            cursorDot.style.left = `${posX}px`;
+            cursorDot.style.top = `${posY}px`;
+
+            cursorOutline.style.left = `${posX}px`;
+            cursorOutline.style.top = `${posY}px`;
+        });
+
+        // Hover Effects
+        const interactiveElements = document.querySelectorAll('.content-card, a');
+        interactiveElements.forEach(el => {
+            el.addEventListener('mouseenter', () => cursorOutline.classList.add('hovered'));
+            el.addEventListener('mouseleave', () => cursorOutline.classList.remove('hovered'));
+        });
+
+        // --- 2. THREE.JS SHADER (Medical/Digital Vibe) ---
+        const initThreeJS = () => {
+            const container = document.getElementById('canvas-container');
+            const scene = new THREE.Scene();
+            const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+            const renderer = new THREE.WebGLRenderer({ alpha: true });
+            
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            container.appendChild(renderer.domElement);
+
+            const geometry = new THREE.PlaneGeometry(2, 2);
+            
+            const uniforms = {
+                u_time: { value: 0.0 },
+                u_resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) }
+            };
+
+            const fragmentShader = `
+                uniform float u_time;
+                uniform vec2 u_resolution;
+
+                void main() {
+                    vec2 uv = (gl_FragCoord.xy * 2.0 - u_resolution.xy) / u_resolution.y;
+                    vec2 uv0 = uv;
+                    vec3 finalColor = vec3(0.0);
+                    
+                    for (float i = 0.0; i < 2.0; i++) {
+                        uv = fract(uv * 1.5) - 0.5;
+
+                        float d = length(uv) * exp(-length(uv0));
+
+                        // Cyan/Medical Palette
+                        vec3 col = 0.5 + 0.5 * cos(u_time + uv0.xyx + vec3(0, 2, 4));
+
+                        d = sin(d*8. + u_time)/8.;
+                        d = abs(d);
+
+                        d = pow(0.01 / d, 1.2);
+
+                        finalColor += col * d;
+                    }
+                        
+                    // Darker background for readability
+                    gl_FragColor = vec4(finalColor * 0.15, 1.0);
+                }
+            `;
+
+            const vertexShader = `
+                void main() {
+                    gl_Position = vec4( position, 1.0 );
+                }
+            `;
+
+            const material = new THREE.ShaderMaterial({
+                uniforms: uniforms,
+                fragmentShader: fragmentShader,
+                vertexShader: vertexShader
+            });
+
+            const plane = new THREE.Mesh(geometry, material);
+            scene.add(plane);
+
+            const animate = () => {
+                requestAnimationFrame(animate);
+                uniforms.u_time.value += 0.005; // Slower, calmer movement
+                renderer.render(scene, camera);
+            };
+
+            animate();
+
+            window.addEventListener('resize', () => {
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                uniforms.u_resolution.value.x = window.innerWidth;
+                uniforms.u_resolution.value.y = window.innerHeight;
+            });
+        };
+
+        initThreeJS();
+
+        // --- 3. MAGNETIC CARDS ---
+        const magnets = document.querySelectorAll('.magnetic-area');
+        
+        magnets.forEach((magnet) => {
+            magnet.addEventListener('mousemove', (e) => {
+                const rect = magnet.getBoundingClientRect();
+                const x = e.clientX - rect.left - rect.width / 2;
+                const y = e.clientY - rect.top - rect.height / 2;
+                
+                // Subtle movement
+                magnet.style.transform = `translate(${x * 0.1}px, ${y * 0.1}px)`;
+            });
+
+            magnet.addEventListener('mouseleave', () => {
+                magnet.style.transform = 'translate(0px, 0px)';
+            });
+        });
+
+        // --- 4. TIMELINE SCROLL ANIMATION ---
+        const observerOptions = {
+            threshold: 0.1,
+            rootMargin: "0px 0px -50px 0px"
+        };
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                    observer.unobserve(entry.target); // Only animate once
+                }
+            });
+        }, observerOptions);
+
+        document.querySelectorAll('.timeline-item').forEach(item => {
+            observer.observe(item);
+        });
+
+    </script>
+</body>
+</html>
